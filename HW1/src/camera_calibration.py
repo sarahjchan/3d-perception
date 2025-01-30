@@ -24,7 +24,6 @@ def calculate_projection(pts2d, pts3d):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-    # test
     N = np.shape(pts2d)[0]
     A = np.zeros((2*N, 12))
 

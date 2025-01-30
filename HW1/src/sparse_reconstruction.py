@@ -5,9 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import helper_functions as _helper
 
-
-
-
 def compute_fundamental_matrix(pts1, pts2, scale):
     """
     Compute the Fundamental matrix from corresponding 2D points in two images.
@@ -28,9 +25,36 @@ def compute_fundamental_matrix(pts1, pts2, scale):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
+    T = np.array([[1/scale, 0, 0], [0, 1/scale, 0], [0, 0, 1]])
+    pts1_normalized = pts1 * (1/scale)
+    pts2_normalized = pts2 * (1/scale)
+    N = np.shape(pts1)[0]
+    A = np.zeros((N, 9))
 
+    for i in range(N):
+        pt1 = pts1_normalized[i]
+        pt2 = pts2_normalized[i]
+
+        x1 = pt1[0]
+        x2 = pt2[0]
+        y1 = pt1[1]
+        y2 = pt2[1]
+
+        A[i, :] = np.array([[x2*x1, x2*y1, x2, y2*x1, y2*y1, y2, x1, y1, 1]])
+
+    U, S, Vt = np.linalg.svd(A)
+
+    f = Vt.T[:, -1]
+    f = np.reshape(f, (3, 3))
+
+    U_F, S_F, Vt_F = np.linalg.svd(f)
+    S_F[2] = 0
+
+    F = U_F @ np.diag(S_F) @ Vt_F
+    F = T.T @ F @ T
+    # _helper.epipolar_lines_GUI_tool(img1, img2, F)
     ####################################
-    return F 
+    return F
 
 def compute_epipolar_correspondences(img1, img2, pts1, F):
     """
@@ -54,7 +78,35 @@ def compute_epipolar_correspondences(img1, img2, pts1, F):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-   
+    N = np.shape(pts1)[0]
+    pts2_ep = np.zeros((N, 2))
+    ones = np.ones((N, 1))
+    pts1 = np.hstack((pts1, ones))
+    best_distance = 9999999
+    height = np.shape(img1)[0]
+    width = np.shape(img1)[1]
+
+    for i in range(N):
+        pt1 = pts1[i]
+        line = F @ pt1
+        pt_x = pt1[0]
+        pt_y = pt1[1]
+
+        if pt_x <= width - 2 and pt_y <= height - 2 and pt_x >= 2 and pt_y >= 2:
+            pt2_xs = range(width)
+            pt2_ys = -(line[0]*pt2_xs + np.ones_like(pt2_xs)*line[2])/line[1]
+            for x in range(2, width - 1):
+                pt2_x = x
+                pt2_y = int(pt2_ys[x])
+                window_pt1 = img1[int(pt_y)-2:int(pt_y)+2, int(pt_x)-2:int(pt_x)+2]
+                window_pt2 = img2[int(pt2_y)-2:int(pt2_y)+2, int(pt2_x)-2:int(pt2_x)+2]
+                distance = np.sum(window_pt1 - window_pt2)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_x = x
+
+        best_y = int(pt2_ys[best_x])
+        pts2_ep[i] = np.array([best_x, best_y])
     ####################################
     return pts2_ep
 
@@ -79,7 +131,7 @@ def compute_essential_matrix(K1, K2, F):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-    
+    E = np.linalg.inv(K2.T) @ F @ np.linalg.inv(K1)
     ####################################
     return E 
 
@@ -112,7 +164,49 @@ def triangulate_points(E, pts1_ep, pts2_ep):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
+    N = np.shape(pts1_ep)[0]
+    point_cloud = np.zeros((N, 3))
+    ones = np.ones((N, 1))
+    pts1_ep = np.hstack((pts1_ep, ones))
+    pts2_ep = np.hstack((pts2_ep, ones))
+
+    extrinsic1 = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
+    R1, R2, t = cv2.decomposeEssentialMat(E)
+    extrinsic2 = np.hstack((-R2, t))
+    print('E', E)
+    print('R1', R1)
+    print('R2', R2)
+
+    x1 = pts1_ep[:, 0]
+    y1 = pts1_ep[:, 1]
+
+    x2 = pts2_ep[:, 0]
+    y2 = pts2_ep[:, 1]
+
+    p11 = extrinsic1[0, :].T
+    p21 = extrinsic1[1, :].T
+    p31 = extrinsic1[2, :].T
     
+    p12 = extrinsic2[0, :].T
+    p22 = extrinsic2[1, :].T
+    p32 = extrinsic2[2, :].T
+    
+
+    for i in range(N):
+        print('pt1', x1[i], y1[i])
+        print('pt2', x2[i], y2[i])
+        A = np.array([[y1[i]*p31 - p21], [p11 - x1[i]*p31], [y2[i]*p32 - p22], [p12 - x2[i]*p32]])
+
+        U, S, Vt = np.linalg.svd(A)
+        V = Vt.T
+        pt = V[:, -1]
+        pt = (1/pt[-1])*pt
+        print('pt', pt)
+        point_cloud[i] = pt[:3]
+        print('pt', pt)
+
+    # point_cloud_cv = cv2.triangulatePoints(extrinsic1, extrinsic2, pts1_ep, pts2_ep)
+    print('pc shape', np.shape(point_cloud))
     ####################################
     return point_cloud, point_cloud_cv
 
@@ -127,7 +221,10 @@ def visualize(point_cloud):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-    
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    ax.scatter(point_cloud[:, 0], point_cloud[:, 1], point_cloud[:, 2])
+    plt.show()
     ####################################
 
 
@@ -151,7 +248,12 @@ if __name__ == "__main__":
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-
+    F = compute_fundamental_matrix(pts1_for_fundamental_matrix, pts2_for_fundamental_matrix, scale)
+    pts2_epipolar = compute_epipolar_correspondences(img1, img2, pts1_epipolar, F)
+    # _helper.epipolar_correspondences_GUI_tool(img1, img2, F)
+    E = compute_essential_matrix(K1, K2, F)
+    point_cloud, point_cloud_cv = triangulate_points(E, pts1_epipolar, pts2_epipolar)
+    visualize(point_cloud)
     ####################################
 
 
