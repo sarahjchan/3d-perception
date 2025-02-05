@@ -271,8 +271,6 @@ def calculate_reprojection_error(pts2d,pts3d, M):
         pt3d = np.append(pt3d, [1])
         proj = M @ pt3d
         proj = proj/proj[2]
-        # print('proj', proj)
-        # print('pt2d', pt2d)
         error += (1/N)*np.linalg.norm(proj - pt2d)
     ####################################
     return error
@@ -306,9 +304,9 @@ if __name__ == "__main__":
     print('E = ', E)
     point_cloud, point_cloud_cv, ext2 = triangulate_points(E, K1, K2, pts1_epipolar, pts2_epipolar)
     print('Ext = ', ext2)
-    error = calculate_reprojection_error(pts1_epipolar, point_cloud, K2@ext2)
+    error = calculate_reprojection_error(pts2_epipolar, point_cloud, K2@ext2)
     print('Reprojection error = ', error)
-    error_ocv = calculate_reprojection_error(pts1_epipolar, point_cloud_cv, K2@ext2)
+    error_ocv = calculate_reprojection_error(pts2_epipolar, point_cloud_cv, K2@ext2)
     print('Reprojection error OCV = ', error_ocv)
     visualize(point_cloud)
     ####################################
