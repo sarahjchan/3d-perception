@@ -52,7 +52,6 @@ def compute_fundamental_matrix(pts1, pts2, scale):
 
     F = U_F @ np.diag(S_F) @ Vt_F
     F = T.T @ F @ T
-    # _helper.epipolar_lines_GUI_tool(img1, img2, F)
     ####################################
     return F
 
@@ -96,21 +95,11 @@ def compute_epipolar_correspondences(img1, img2, pts1, F):
             pt2_xs = range(width)
             pt2_ys = -(line[0]*pt2_xs + np.ones_like(pt2_xs)*line[2])/line[1]
             for x in range(3, width - 2):
-                # print('x', x)
                 pt2_x = x
                 pt2_y = int(pt2_ys[x])
-                # print(height)
-                # print(width)
-                # print('pt_x', int(pt_x))
-                # print('pt_y', int(pt_y))
-                # print('pt2_x', int(pt2_x))
-                # print('pt2_y', int(pt2_y))
                 window_pt1 = img1[int(pt_y)-3:int(pt_y)+3, int(pt_x)-3:int(pt_x)+3]
-                # print('window_pt1', np.shape(window_pt1))
                 window_pt2 = img2[int(pt2_y)-3:int(pt2_y)+3, int(pt2_x)-3:int(pt2_x)+3]
-                # print('window_pt2', np.shape(window_pt2))
-                # print('hi', img2[])
-                distance = np.sum(window_pt1 - window_pt2)
+                distance = np.sum(np.square(window_pt1 - window_pt2))
                 if distance < best_distance:
                     best_distance = distance
                     best_x = x
@@ -141,7 +130,6 @@ def compute_essential_matrix(K1, K2, F):
     ####################################
     ##########YOUR CODE HERE############
     ####################################
-    # E = np.linalg.inv(K2.T) @ F @ np.linalg.inv(K1)
     E = K2.T @ F @ K1
     ####################################
     return E 
@@ -176,6 +164,7 @@ def triangulate_points(E, K1, K2, pts1_ep, pts2_ep):
     ##########YOUR CODE HERE############
     ####################################
     N = np.shape(pts1_ep)[0]
+
     C1 = K1 @ np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
 
     U, S, Vt = np.linalg.svd(E)
@@ -185,17 +174,23 @@ def triangulate_points(E, K1, K2, pts1_ep, pts2_ep):
     t = U[:, -1]
     t = np.reshape(t, (3, 1))
 
-    # R1, R2, t = cv2.decomposeEssentialMat(E)
-    C2 = K2 @ np.hstack((R2, -t))
+    C2 = K2 @ np.hstack((R2, t))
+    ext2 = np.hstack((R2, t))
+
+    pts1_float = np.array(pts1_ep.T, dtype=np.float32)
+    pts2_float = np.array(pts2_ep.T, dtype=np.float32)
+
+    point_cloud_cv = cv2.triangulatePoints(C1, C2, pts1_float, pts2_float).T
+    for i in range(N):
+        point_cloud_cv[i, :] = point_cloud_cv[i, :] * (1/point_cloud_cv[i, 3])
+
+    point_cloud_cv = point_cloud_cv[:, :-1]
+
     point_cloud = np.zeros((N, 3))
-    # point_cloud_cv = cv2.triangulatePoints(extrinsic1, extrinsic2, pts1_ep.T, pts2_ep.T)
+
     ones = np.ones((N, 1))
     pts1_ep = np.hstack((pts1_ep, ones))
     pts2_ep = np.hstack((pts2_ep, ones))
-
-    print('E', E)
-    print('R1', R1)
-    print('R2', R2)
 
     x1 = pts1_ep[:, 0]
     y1 = pts1_ep[:, 1]
@@ -213,13 +208,6 @@ def triangulate_points(E, K1, K2, pts1_ep, pts2_ep):
     
 
     for i in range(N):
-        print('pt1', x1[i], y1[i])
-        print('pt2', x2[i], y2[i])
-
-        # A = np.array([[y1[i]*p31 - p21], \
-        #               [p11 - x1[i]*p31], \
-        #               [y2[i]*p32 - p22], \
-        #               [p12 - x2[i]*p32]])
         A = np.array([[x1[i]*C31 - C11], \
                       [y1[i]*C31 - C21], \
                       [x2[i]*C32 - C12], \
@@ -227,19 +215,12 @@ def triangulate_points(E, K1, K2, pts1_ep, pts2_ep):
         A = np.reshape(A, (4, 4))
         U, S, Vt = np.linalg.svd(A)
         V = Vt.T
-        # print('A', np.shape(A))
-        # print('V', np.shape(V))
         pt = V[:, -1]
         pt = (1/pt[-1])*pt
-        print('pt', pt)
         point_cloud[i] = pt[:3]
-        # print('pt', pt)
 
-    # print('pc shape', np.shape(point_cloud))
-    # print('pc', point_cloud)
     ####################################
-    return point_cloud, point_cloud_cv
-
+    return point_cloud, point_cloud_cv, ext2
 
 def visualize(point_cloud):
     """
@@ -253,10 +234,48 @@ def visualize(point_cloud):
     ####################################
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    ax.scatter(point_cloud[:, 0], point_cloud[:, 1], point_cloud[:, 2])
+    ax.scatter(point_cloud[:, 0], point_cloud[:, 1], point_cloud[:, 2], color='tab:blue', alpha=1)
+    ax.set_xlabel('X Axis')
+    ax.set_ylabel('Y Axis')
+    ax.set_zlabel('Z Axis')
     plt.show()
     ####################################
 
+def calculate_reprojection_error(pts2d,pts3d, M):
+    """
+    Calculate the reprojection error for a set of 2D-3D point correspondences.
+
+    Given a set of N 2D image points (pts2d) and their corresponding 3D world coordinates
+    (pts3d), this function calculates the reprojection error. The reprojection error is a
+    measure of how accurately the 3D points project onto the 2D image plane when using a
+    projection matrix.
+
+    Parameters:
+    pts2d (numpy.ndarray): An Nx2 array containing the 2D image points.
+    pts3d (numpy.ndarray): An Nx3 array containing the corresponding 3D world coordinates.
+
+    Returns:
+    float: The reprojection error, which quantifies the accuracy of the 3D points'
+           projection onto the 2D image plane.
+    """
+    error = None
+    ####################################
+    ##########YOUR CODE HERE############
+    ####################################
+    N = np.shape(pts2d)[0]
+    error = 0.0
+    for i in range(N):
+        pt2d = pts2d[i]
+        pt3d = pts3d[i]
+        pt2d = np.append(pt2d, [1])
+        pt3d = np.append(pt3d, [1])
+        proj = M @ pt3d
+        proj = proj/proj[2]
+        # print('proj', proj)
+        # print('pt2d', pt2d)
+        error += (1/N)*np.linalg.norm(proj - pt2d)
+    ####################################
+    return error
 
 if __name__ == "__main__":
     data_for_fundamental_matrix = np.load("data/corresp_subset.npz")
@@ -279,13 +298,17 @@ if __name__ == "__main__":
     ##########YOUR CODE HERE############
     ####################################
     F = compute_fundamental_matrix(pts1_for_fundamental_matrix, pts2_for_fundamental_matrix, scale)
+    print('F = ', F)
+    # _helper.epipolar_lines_GUI_tool(img1, img2, F)
     pts2_epipolar = compute_epipolar_correspondences(img1, img2, pts1_epipolar, F)
     # _helper.epipolar_correspondences_GUI_tool(img1, img2, F)
     E = compute_essential_matrix(K1, K2, F)
-    point_cloud, point_cloud_cv = triangulate_points(E, K1, K2, pts1_epipolar, pts2_epipolar)
+    print('E = ', E)
+    point_cloud, point_cloud_cv, ext2 = triangulate_points(E, K1, K2, pts1_epipolar, pts2_epipolar)
+    print('Ext = ', ext2)
+    error = calculate_reprojection_error(pts1_epipolar, point_cloud, K2@ext2)
+    print('Reprojection error = ', error)
+    error_ocv = calculate_reprojection_error(pts1_epipolar, point_cloud_cv, K2@ext2)
+    print('Reprojection error OCV = ', error_ocv)
     visualize(point_cloud)
     ####################################
-
-
-
-

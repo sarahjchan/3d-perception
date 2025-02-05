@@ -35,10 +35,8 @@ def calculate_projection(pts2d, pts3d):
         x = pts2d[i][0]
         y = pts2d[i][1]
 
-        A_next = np.array([[X, Y, Z, 1, 0, 0, 0, 0, -x*X, -x*Y, -x*Z, -x], \
+        A[2*i:2*i+2, :] = np.array([[X, Y, Z, 1, 0, 0, 0, 0, -x*X, -x*Y, -x*Z, -x], \
                            [0, 0, 0, 0, X, Y, Z, 1, -y*X, -y*Y, -y*Z, -y]])
-
-        A[2*i:2*i+2, :] = A_next
 
     U, S, Vt = np.linalg.svd(A)
     V = Vt.T
@@ -46,7 +44,6 @@ def calculate_projection(pts2d, pts3d):
     M = np.reshape(M, (3, 4))
     ####################################
     return M
-
 
 def calculate_reprojection_error(pts2d,pts3d):
     """
